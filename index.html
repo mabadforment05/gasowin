@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>GasoWin · Gasolineras al mejor precio</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
+
+  :root{
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --panel-2: #f0f1f4;
+    --navbar: rgba(255,255,255,0.86);
+    --accent: #4f46e5;
+    --accent-ink: #ffffff;
+    --accent-soft: #eef0fd;
+    --green: #16a34a;
+    --mid: #d97706;
+    --red: #dc2626;
+    --text: #14161a;
+    --text-dim: #6b7280;
+    --border: #e5e7eb;
+    --shadow: 0 1px 2px rgba(15,17,20,.04), 0 10px 28px rgba(15,17,20,.07);
+    --radius-lg: 16px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+  }
+  html[data-theme="dark"]{
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212a;
+    --navbar: rgba(23,26,33,0.86);
+    --accent: #6c63ff;
+    --accent-soft: #23243a;
+    --text: #eef0f4;
+    --text-dim: #9099a8;
+    --border: #262a34;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 30px rgba(0,0,0,.35);
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text); font-family:'Inter', sans-serif; }
+  h1,h2,h3{ font-family:'Manrope', sans-serif; }
+
+  #appRoot{ display:flex; height:100vh; width:100vw; overflow:hidden; }
+
+  /* ---------------- Map ---------------- */
+  #mapWrap{ flex:1; position:relative; min-width:0; }
+  #map{ position:absolute; inset:0; background:#e9eaee; }
+  .leaflet-control-attribution{ background: var(--navbar) !important; color:var(--text-dim) !important; border-radius:6px; }
+  .leaflet-control-attribution a{ color:var(--accent) !important; }
+  .leaflet-control-zoom{ border:none !important; box-shadow: var(--shadow) !important; border-radius: var(--radius-sm) !important; overflow:hidden; }
+  .leaflet-control-zoom a{ background:var(--panel) !important; color:var(--text) !important; border-color:var(--border) !important; }
+
+  /* ---------------- Top navbar (evita solapes: todo en una sola barra) ---------------- */
+  .navbar{
+    position:absolute; top:14px; left:14px; right:14px; z-index:500;
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    background: var(--navbar); border:1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 10px 14px; backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  }
+  .navbar .brand{ display:flex; align-items:center; gap:9px; flex-shrink:0; }
+  .navbar .brand svg{ width:28px; height:28px; }
+  .navbar .brand span{ font-weight:800; font-size:16px; letter-spacing:-.2px; font-family:'Manrope',sans-serif; }
+  .navbar .spacer{ flex:1; min-width:8px; }
+  .live-status{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-dim); }
+  .live-dot{ width:7px; height:7px; border-radius:50%; background:var(--green); flex-shrink:0; }
+  .live-dot.stale{ background:var(--mid); }
+  .live-dot.error{ background:var(--red); }
+  .navbar button, .navbar select{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    border-radius: 999px; padding:7px 12px; font-family:'Inter',sans-serif;
+    font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .navbar button:hover{ border-color:var(--accent); color:var(--accent); }
+
+  /* legend on map (compact) */
+  .legend{
+    position:absolute; bottom:14px; right:14px; z-index:500;
+    background: var(--navbar); border:1px solid var(--border); border-radius: var(--radius-md);
+    padding: 10px 14px; backdrop-filter: blur(10px); box-shadow: var(--shadow);
+    font-size:12px; color:var(--text-dim);
+  }
+  .legend-row{ display:flex; align-items:center; gap:7px; margin:3px 0; }
+  .legend-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+  /* ---------------- Location modal ---------------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(10,12,16,.55); z-index:2000;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-card{
+    background:var(--panel); border-radius: var(--radius-lg); padding:28px 26px;
+    max-width:380px; width:100%; box-shadow: var(--shadow); text-align:center;
+  }
+  .modal-card .modal-icon{ width:46px; height:46px; border-radius:50%; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; }
+  .modal-card h3{ margin:0 0 8px; font-size:18px; }
+  .modal-card p{ margin:0 0 20px; font-size:13.5px; color:var(--text-dim); line-height:1.5; }
+  .modal-card .btn-primary{
+    width:100%; background:var(--accent); color:#fff; border:none; border-radius: var(--radius-sm);
+    padding:12px; font-family:'Inter',sans-serif; font-weight:700; font-size:14px; cursor:pointer; margin-bottom:8px;
+  }
+  .modal-card .btn-primary:hover{ filter:brightness(1.08); }
+  .modal-card .btn-text{
+    background:none; border:none; color:var(--text-dim); font-size:12.5px; cursor:pointer; text-decoration:underline;
+  }
+
+  /* custom leaflet markers */
+  .fuel-marker{
+    display:flex; align-items:center; justify-content:center;
+    border-radius: var(--radius-sm); color:#0d1013; font-family:'IBM Plex Mono', monospace;
+    font-weight:700; font-size: 11.5px; letter-spacing:.2px;
+    border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); white-space: nowrap;
+  }
+  .leaflet-popup-content-wrapper{ background:var(--panel); color:var(--text); border-radius: var(--radius-md); box-shadow: var(--shadow); }
+  .leaflet-popup-tip{ background:var(--panel); }
+  .popup-title{ font-weight:700; font-size:14px; margin-bottom:4px; font-family:'Manrope',sans-serif; }
+  .popup-row{ font-family:'Inter',sans-serif; font-size:12.5px; color:var(--text-dim); margin:2px 0; }
+  .popup-price{ color:var(--accent); font-weight:700; font-family:'IBM Plex Mono',monospace; }
+  .popup-go-btn{
+    margin-top:8px; width:100%; background:var(--accent); color:#fff; border:none;
+    border-radius: var(--radius-sm); padding:8px; font-family:'Inter',sans-serif; font-weight:700;
+    font-size:12.5px; cursor:pointer;
+  }
+  .popup-go-btn:hover{ filter:brightness(1.08); }
+
+  /* ---------------- Side panel ---------------- */
+  #panel{
+    width: 380px; flex-shrink:0; background: var(--panel);
+    border-left: 1px solid var(--border); overflow-y:auto; padding: 20px 20px 32px;
+  }
+  #panel h2{ font-size:13.5px; font-weight:700; margin: 22px 0 10px; letter-spacing:.2px; text-transform:uppercase; color:var(--text-dim); }
+  #panel h2:first-of-type{ margin-top:0; }
+
+  .fuel-tabs{ display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; }
+  .fuel-tab{
+    padding:11px 8px; border-radius: var(--radius-md); border:1px solid var(--border);
+    background: var(--panel-2); color:var(--text-dim);
+    font-family:'Inter',sans-serif; font-size:13px; font-weight:600; cursor:pointer;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .fuel-tab.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  .radius-row{ display:flex; gap:8px; }
+  .radius-chip{
+    flex:1; padding:9px 4px; border-radius: var(--radius-sm); border:1px solid var(--border);
+    background: var(--panel-2); color:var(--text-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .radius-chip.active{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+
+  .loc-controls{ display:flex; flex-direction:column; gap:9px; }
+  .loc-btn{
+    background: var(--accent); color:#fff; border:none; border-radius: var(--radius-md);
+    padding: 12px; font-family:'Inter',sans-serif; font-weight:700; font-size:14px; cursor:pointer;
+  }
+  .loc-btn:hover{ filter:brightness(1.08); }
+  .search-row{ display:flex; gap:8px; }
+  .search-row input{
+    flex:1; background:var(--panel-2); border:1px solid var(--border); border-radius: var(--radius-sm);
+    color:var(--text); padding:10px 11px; font-family:'Inter',sans-serif; font-size:13px;
+  }
+  .search-row input:focus{ outline:none; border-color:var(--accent); }
+  .search-row button{
+    background:var(--panel-2); border:1px solid var(--border); border-radius: var(--radius-sm);
+    color:var(--text); padding:0 14px; cursor:pointer; font-size:13px; font-weight:600;
+  }
+  .search-row button:hover{ border-color:var(--accent); }
+  .loc-status{ font-size:12px; color:var(--text-dim); min-height:16px; }
+
+  .legend-inline{
+    display:flex; flex-wrap:wrap; gap:10px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius: var(--radius-md); padding:10px 12px; font-size:11.5px; color:var(--text-dim);
+  }
+  .legend-inline .legend-row{ margin:0; }
+
+  .station-list{ display:flex; flex-direction:column; gap:10px; }
+  .station-item{
+    border:1px solid var(--border); border-radius: var(--radius-md); padding:12px 13px; background:var(--panel-2);
+    transition: border-color .15s, transform .1s;
+  }
+  .station-item:hover{ border-color: var(--accent); }
+  .station-item.rank-1{ border-color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--panel-2)); }
+  .station-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; cursor:pointer; }
+  .station-name{ font-size:13.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .station-price{ font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent); font-size:14px; white-space:nowrap; }
+  .station-sub{ font-size:11.5px; color:var(--text-dim); margin-top:3px; display:flex; justify-content:space-between; cursor:pointer; }
+
+  .empty-note{ color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .footer-note{ margin-top:24px; padding-top:16px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim); line-height:1.6; }
+
+  @media (max-width: 860px){
+    #appRoot{ flex-direction:column; }
+    #mapWrap{ flex: 1 1 46%; min-height: 260px; }
+    #panel{ width:100%; flex: 1 1 54%; border-left:none; border-top:1px solid var(--border); }
+    .fuel-tabs{ grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div id="appRoot">
+  <div id="mapWrap">
+    <div id="map"></div>
+
+    <div class="navbar">
+      <div class="brand">
+        <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="19" style="fill:var(--accent)"/>
+          <path d="M13 30V13a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v17" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M11 30h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          <path d="M23 17h2.6a1.2 1.2 0 0 1 1.15.86l1.05 3.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="27.6" cy="25" r="2.1" stroke="#fff" stroke-width="2" fill="none"/>
+          <path d="M15 15h4" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          <path d="M29 7.2l1.15 2.4 2.6.35-1.9 1.8.45 2.6-2.3-1.25-2.3 1.25.45-2.6-1.9-1.8 2.6-.35z" style="fill:#ffc94d"/>
+        </svg>
+        <span>GasoWin</span>
+      </div>
+      <div class="live-status">
+        <div class="live-dot" id="liveDot"></div>
+        <span id="liveText">—</span>
+      </div>
+      <div class="spacer"></div>
+      <button id="refreshBtn" data-i18n="refreshBtn">Actualizar</button>
+      <select id="langSelect">
+        <option value="es">ES</option>
+        <option value="ca">CA</option>
+        <option value="gl">GL</option>
+        <option value="eu">EU</option>
+        <option value="en">EN</option>
+        <option value="fr">FR</option>
+        <option value="de">DE</option>
+        <option value="it">IT</option>
+        <option value="pt">PT</option>
+      </select>
+    </div>
+
+    <div class="legend" id="legendBox"></div>
+  </div>
+
+  <div id="panel">
+    <h2 data-i18n="fuelHeading">Combustible</h2>
+    <div class="fuel-tabs" id="fuelTabs">
+      <button class="fuel-tab active" data-fuel="95" data-i18n="tab95">Gasolina 95</button>
+      <button class="fuel-tab" data-fuel="98" data-i18n="tab98">Gasolina 98</button>
+      <button class="fuel-tab" data-fuel="diesel" data-i18n="tabDiesel">Diésel</button>
+      <button class="fuel-tab" data-fuel="adblue" data-i18n="tabAdblue">AdBlue</button>
+    </div>
+
+    <h2 data-i18n="radiusHeading">Radio de búsqueda</h2>
+    <div class="radius-row" id="radiusRow">
+      <button class="radius-chip" data-km="5">5 km</button>
+      <button class="radius-chip active" data-km="10">10 km</button>
+      <button class="radius-chip" data-km="15">15 km</button>
+      <button class="radius-chip" data-km="20">20 km</button>
+    </div>
+
+    <h2 data-i18n="locationHeading">Tu ubicación</h2>
+    <div class="loc-controls">
+      <button class="loc-btn" id="geoBtn" data-i18n="useLocationBtn">Usar mi ubicación actual</button>
+      <div class="search-row">
+        <input type="text" id="citySearch" data-i18n-placeholder="searchPlaceholder" placeholder="O busca una ciudad o dirección">
+        <button id="searchBtn" data-i18n="goBtn">Ir</button>
+      </div>
+      <div class="loc-status" id="locStatus"></div>
+    </div>
+
+    <h2 id="nearbyHeading" data-i18n="nearbyHeading">Más baratas cerca de ti</h2>
+    <div class="legend-inline" id="legendInline"></div>
+    <div style="height:10px;"></div>
+    <div class="station-list" id="stationList"></div>
+    <p class="empty-note" id="stationEmpty" data-i18n="emptyNoLocation">Indica tu ubicación para ver los resultados más cercanos.</p>
+
+    <h2 data-i18n="debugHeading">Estado de la conexión</h2>
+    <div class="empty-note" id="debugPanel" style="font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.6; white-space:pre-wrap;">—</div>
+
+    <div class="footer-note" id="footerNote"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="locModal">
+  <div class="modal-card">
+    <div class="modal-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21Z" stroke="var(--accent)" stroke-width="1.8"/>
+        <circle cx="12" cy="9.5" r="2.4" stroke="var(--accent)" stroke-width="1.8"/>
+      </svg>
+    </div>
+    <h3 id="modalTitle">Activa tu ubicación en directo</h3>
+    <p id="modalBody">GasoWin necesita saber dónde estás para mostrarte las gasolineras más baratas cerca de ti, en tiempo real.</p>
+    <button class="btn-primary" id="modalActivateBtn">Activar ubicación en directo</button>
+    <button class="btn-text" id="modalSkipBtn">Prefiero buscar una ciudad</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------------- i18n ----------------
+  const I18N = {
+    es: {
+      refreshBtn:'Actualizar', fuelHeading:'Combustible',
+      tab95:'Gasolina 95', tab98:'Gasolina 98', tabDiesel:'Diésel', tabAdblue:'AdBlue',
+      radiusHeading:'Radio de búsqueda', locationHeading:'Tu ubicación',
+      useLocationBtn:'Usar mi ubicación actual', searchPlaceholder:'O busca una ciudad o dirección', goBtn:'Ir',
+      nearbyHeading:'Más baratas cerca de ti',
+      emptyNoLocation:'Indica tu ubicación para ver los resultados más cercanos.',
+      emptyNoResults:(r,f)=>`No hay resultados de ${f} en un radio de ${r} km. Prueba a ampliar el radio.`,
+      debugHeading:'Estado de la conexión',
+      locSearching:'Buscando…', locLocating:'Localizando…', locSet:'Ubicación establecida', locNotFound:'No se ha encontrado esa ubicación en España. Prueba con otro nombre.',
+      liveLoading:'Actualizando precios oficiales…', liveOk:(m)=>`En directo · actualizado ${m}`, liveError:'No se pudieron cargar los precios oficiales ahora mismo',
+      agoNow:'hace un momento', agoMin:(m)=>`hace ${m} min`,
+      legend1:'Precio más bajo', legend2:'Precio medio', legend3:'Precio más alto',
+      distSuffix:'de tu ubicación',
+      modalTitle:'Activa tu ubicación en directo', modalBody:'GasoWin necesita saber dónde estás para mostrarte las gasolineras más baratas cerca de ti, en tiempo real.',
+      modalActivateBtn:'Activar ubicación en directo', modalSkipBtn:'Prefiero buscar una ciudad',
+      footerNote:'Precios de carburantes: datos oficiales del Ministerio para la Transición Ecológica y el Reto Demográfico, reutilizados conforme a sus condiciones de reutilización. Tu ubicación se usa solo en tu navegador y no se envía a ningún servidor propio.'
+    },
+    ca: {
+      refreshBtn:'Actualitza', fuelHeading:'Combustible',
+      tab95:'Gasolina 95', tab98:'Gasolina 98', tabDiesel:'Dièsel', tabAdblue:'AdBlue',
+      radiusHeading:'Radi de cerca', locationHeading:'La teva ubicació',
+      useLocationBtn:'Usa la meva ubicació actual', searchPlaceholder:'O cerca una ciutat o adreça', goBtn:'Vés-hi',
+      nearbyHeading:'Més barates a prop teu',
+      emptyNoLocation:'Indica la teva ubicació per veure els resultats més propers.',
+      emptyNoResults:(r,f)=>`No hi ha resultats de ${f} en un radi de ${r} km. Prova d'ampliar el radi.`,
+      debugHeading:'Estat de la connexió',
+      locSearching:'Cercant…', locLocating:'Localitzant…', locSet:'Ubicació establerta', locNotFound:'No s\'ha trobat aquesta ubicació a Espanya. Prova un altre nom.',
+      liveLoading:'Actualitzant preus oficials…', liveOk:(m)=>`En directe · actualitzat ${m}`, liveError:'No s\'han pogut carregar els preus oficials ara mateix',
+      agoNow:'fa un moment', agoMin:(m)=>`fa ${m} min`,
+      legend1:'Preu més baix', legend2:'Preu mitjà', legend3:'Preu més alt',
+      distSuffix:'de la teva ubicació',
+      modalTitle:'Activa la teva ubicació en directe', modalBody:'GasoWin necessita saber on ets per mostrar-te les gasolineres més barates a prop teu, en temps real.',
+      modalActivateBtn:'Activa la ubicació en directe', modalSkipBtn:'Prefereixo cercar una ciutat',
+      footerNote:'Preus de carburants: dades oficials del Ministeri per a la Transició Ecològica i el Repte Demogràfic. La teva ubicació només s\'usa al teu navegador.'
+    },
+    gl: {
+      refreshBtn:'Actualizar', fuelHeading:'Combustible',
+      tab95:'Gasolina 95', tab98:'Gasolina 98', tabDiesel:'Gasóleo', tabAdblue:'AdBlue',
+      radiusHeading:'Radio de busca', locationHeading:'A túa localización',
+      useLocationBtn:'Usar a miña localización actual', searchPlaceholder:'Ou busca unha cidade ou enderezo', goBtn:'Ir',
+      nearbyHeading:'Máis baratas preto de ti',
+      emptyNoLocation:'Indica a túa localización para ver os resultados máis próximos.',
+      emptyNoResults:(r,f)=>`Non hai resultados de ${f} nun radio de ${r} km. Proba a ampliar o radio.`,
+      debugHeading:'Estado da conexión',
+      locSearching:'Buscando…', locLocating:'Localizando…', locSet:'Localización establecida', locNotFound:'Non se atopou esa localización en España. Proba con outro nome.',
+      liveLoading:'Actualizando prezos oficiais…', liveOk:(m)=>`En directo · actualizado ${m}`, liveError:'Non se puideron cargar os prezos oficiais agora mesmo',
+      agoNow:'hai un momento', agoMin:(m)=>`hai ${m} min`,
+      legend1:'Prezo máis baixo', legend2:'Prezo medio', legend3:'Prezo máis alto',
+      distSuffix:'da túa localización',
+      modalTitle:'Activa a túa localización en directo', modalBody:'GasoWin necesita saber onde estás para amosarche as gasolineiras máis baratas preto de ti, en tempo real.',
+      modalActivateBtn:'Activar localización en directo', modalSkipBtn:'Prefiro buscar unha cidade',
+      footerNote:'Prezos de carburantes: datos oficiais do Ministerio para a Transición Ecolóxica e o Reto Demográfico. A túa localización só se usa no teu navegador.'
+    },
+    eu: {
+      refreshBtn:'Eguneratu', fuelHeading:'Erregaia',
+      tab95:'Gasolina 95', tab98:'Gasolina 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Bilaketa-erradioa', locationHeading:'Zure kokapena',
+      useLocationBtn:'Erabili nire uneko kokapena', searchPlaceholder:'Edo bilatu hiri edo helbide bat', goBtn:'Joan',
+      nearbyHeading:'Merkeenak zure inguruan',
+      emptyNoLocation:'Adierazi zure kokapena inguruko emaitzak ikusteko.',
+      emptyNoResults:(r,f)=>`Ez dago ${f} emaitzarik ${r} km-ko erradioan. Handitu erradioa.`,
+      debugHeading:'Konexioaren egoera',
+      locSearching:'Bilatzen…', locLocating:'Kokatzen…', locSet:'Kokapena ezarrita', locNotFound:'Ez da kokapen hori aurkitu Espainian. Saiatu beste izen batekin.',
+      liveLoading:'Prezio ofizialak eguneratzen…', liveOk:(m)=>`Zuzenean · eguneratua ${m}`, liveError:'Ezin izan dira prezio ofizialak kargatu orain',
+      agoNow:'orain dela une bat', agoMin:(m)=>`duela ${m} min`,
+      legend1:'Prezio baxuena', legend2:'Batez besteko prezioa', legend3:'Prezio garestiena',
+      distSuffix:'zure kokapenetik',
+      modalTitle:'Aktibatu zure uneko kokapena', modalBody:'GasoWin-ek zure kokapena behar du inguruko gasolindegi merkeenak erakusteko, zuzenean.',
+      modalActivateBtn:'Aktibatu kokapena zuzenean', modalSkipBtn:'Nahiago dut hiri bat bilatu',
+      footerNote:'Erregai prezioak: Trantsizio Ekologikorako eta Erronka Demografikorako Ministerioaren datu ofizialak. Zure kokapena zure nabigatzailean bakarrik erabiltzen da.'
+    },
+    en: {
+      refreshBtn:'Refresh', fuelHeading:'Fuel type',
+      tab95:'Petrol 95', tab98:'Petrol 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Search radius', locationHeading:'Your location',
+      useLocationBtn:'Use my current location', searchPlaceholder:'Or search a city or address', goBtn:'Go',
+      nearbyHeading:'Cheapest near you',
+      emptyNoLocation:'Set your location to see the nearest results.',
+      emptyNoResults:(r,f)=>`No ${f} results within ${r} km. Try widening the radius.`,
+      debugHeading:'Connection status',
+      locSearching:'Searching…', locLocating:'Locating…', locSet:'Location set', locNotFound:'That location could not be found in Spain. Try another name.',
+      liveLoading:'Updating official prices…', liveOk:(m)=>`Live · updated ${m}`, liveError:'Could not load official prices right now',
+      agoNow:'just now', agoMin:(m)=>`${m} min ago`,
+      legend1:'Lowest price', legend2:'Average price', legend3:'Highest price',
+      distSuffix:'from your location',
+      modalTitle:'Turn on live location', modalBody:'GasoWin needs to know where you are to show you the cheapest fuel stations nearby, in real time.',
+      modalActivateBtn:'Turn on live location', modalSkipBtn:"I'd rather search a city",
+      footerNote:"Fuel prices: official data from Spain's Ministry for the Ecological Transition and the Demographic Challenge. Your location is only used in your browser and never sent to any server of ours."
+    },
+    fr: {
+      refreshBtn:'Actualiser', fuelHeading:'Carburant',
+      tab95:'Essence 95', tab98:'Essence 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Rayon de recherche', locationHeading:'Votre position',
+      useLocationBtn:'Utiliser ma position actuelle', searchPlaceholder:'Ou cherchez une ville ou une adresse', goBtn:'Y aller',
+      nearbyHeading:'Les moins chères près de vous',
+      emptyNoLocation:'Indiquez votre position pour voir les résultats les plus proches.',
+      emptyNoResults:(r,f)=>`Aucun résultat ${f} dans un rayon de ${r} km. Essayez d'élargir le rayon.`,
+      debugHeading:'État de la connexion',
+      locSearching:'Recherche…', locLocating:'Localisation…', locSet:'Position définie', locNotFound:"Cette adresse n'a pas été trouvée en Espagne. Essayez un autre nom.",
+      liveLoading:'Mise à jour des prix officiels…', liveOk:(m)=>`En direct · mis à jour ${m}`, liveError:'Impossible de charger les prix officiels pour le moment',
+      agoNow:"à l'instant", agoMin:(m)=>`il y a ${m} min`,
+      legend1:'Prix le plus bas', legend2:'Prix moyen', legend3:'Prix le plus élevé',
+      distSuffix:'de votre position',
+      modalTitle:'Activez votre position en direct', modalBody:"GasoWin a besoin de savoir où vous êtes pour vous montrer les stations les moins chères près de vous, en temps réel.",
+      modalActivateBtn:'Activer la position en direct', modalSkipBtn:'Je préfère chercher une ville',
+      footerNote:"Prix des carburants : données officielles du ministère espagnol de la Transition écologique. Votre position n'est utilisée que dans votre navigateur."
+    },
+    de: {
+      refreshBtn:'Aktualisieren', fuelHeading:'Kraftstoff',
+      tab95:'Benzin 95', tab98:'Benzin 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Suchradius', locationHeading:'Dein Standort',
+      useLocationBtn:'Meinen aktuellen Standort verwenden', searchPlaceholder:'Oder Stadt oder Adresse suchen', goBtn:'Los',
+      nearbyHeading:'Günstigste in deiner Nähe',
+      emptyNoLocation:'Gib deinen Standort an, um die nächsten Ergebnisse zu sehen.',
+      emptyNoResults:(r,f)=>`Keine ${f}-Ergebnisse im Umkreis von ${r} km. Radius vergrößern.`,
+      debugHeading:'Verbindungsstatus',
+      locSearching:'Suche…', locLocating:'Standort wird ermittelt…', locSet:'Standort festgelegt', locNotFound:'Dieser Ort wurde in Spanien nicht gefunden. Versuche einen anderen Namen.',
+      liveLoading:'Offizielle Preise werden aktualisiert…', liveOk:(m)=>`Live · aktualisiert ${m}`, liveError:'Offizielle Preise konnten gerade nicht geladen werden',
+      agoNow:'gerade eben', agoMin:(m)=>`vor ${m} Min.`,
+      legend1:'Niedrigster Preis', legend2:'Durchschnittspreis', legend3:'Höchster Preis',
+      distSuffix:'von deinem Standort',
+      modalTitle:'Live-Standort aktivieren', modalBody:'GasoWin muss wissen, wo du bist, um dir die günstigsten Tankstellen in deiner Nähe in Echtzeit zu zeigen.',
+      modalActivateBtn:'Live-Standort aktivieren', modalSkipBtn:'Ich suche lieber eine Stadt',
+      footerNote:'Kraftstoffpreise: offizielle Daten des spanischen Ministeriums für den ökologischen Wandel. Dein Standort wird nur in deinem Browser verwendet.'
+    },
+    it: {
+      refreshBtn:'Aggiorna', fuelHeading:'Carburante',
+      tab95:'Benzina 95', tab98:'Benzina 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Raggio di ricerca', locationHeading:'La tua posizione',
+      useLocationBtn:'Usa la mia posizione attuale', searchPlaceholder:'Oppure cerca una città o un indirizzo', goBtn:'Vai',
+      nearbyHeading:'Le più economiche vicino a te',
+      emptyNoLocation:'Indica la tua posizione per vedere i risultati più vicini.',
+      emptyNoResults:(r,f)=>`Nessun risultato ${f} entro ${r} km. Prova ad ampliare il raggio.`,
+      debugHeading:'Stato della connessione',
+      locSearching:'Ricerca…', locLocating:'Localizzazione…', locSet:'Posizione impostata', locNotFound:'Località non trovata in Spagna. Prova un altro nome.',
+      liveLoading:'Aggiornamento prezzi ufficiali…', liveOk:(m)=>`In diretta · aggiornato ${m}`, liveError:'Impossibile caricare i prezzi ufficiali in questo momento',
+      agoNow:'proprio ora', agoMin:(m)=>`${m} min fa`,
+      legend1:'Prezzo più basso', legend2:'Prezzo medio', legend3:'Prezzo più alto',
+      distSuffix:'dalla tua posizione',
+      modalTitle:'Attiva la posizione in diretta', modalBody:'GasoWin deve sapere dove ti trovi per mostrarti i distributori più economici vicino a te, in tempo reale.',
+      modalActivateBtn:'Attiva posizione in diretta', modalSkipBtn:'Preferisco cercare una città',
+      footerNote:'Prezzi dei carburanti: dati ufficiali del Ministero spagnolo per la Transizione Ecologica. La tua posizione viene usata solo nel tuo browser.'
+    },
+    pt: {
+      refreshBtn:'Atualizar', fuelHeading:'Combustível',
+      tab95:'Gasolina 95', tab98:'Gasolina 98', tabDiesel:'Diesel', tabAdblue:'AdBlue',
+      radiusHeading:'Raio de busca', locationHeading:'A tua localização',
+      useLocationBtn:'Usar a minha localização atual', searchPlaceholder:'Ou procura uma cidade ou morada', goBtn:'Ir',
+      nearbyHeading:'Mais baratos perto de ti',
+      emptyNoLocation:'Indica a tua localização para ver os resultados mais próximos.',
+      emptyNoResults:(r,f)=>`Sem resultados de ${f} num raio de ${r} km. Tenta alargar o raio.`,
+      debugHeading:'Estado da ligação',
+      locSearching:'A procurar…', locLocating:'A localizar…', locSet:'Localização definida', locNotFound:'Não foi encontrada essa localização em Espanha. Tenta outro nome.',
+      liveLoading:'A atualizar preços oficiais…', liveOk:(m)=>`Em direto · atualizado ${m}`, liveError:'Não foi possível carregar os preços oficiais agora',
+      agoNow:'agora mesmo', agoMin:(m)=>`há ${m} min`,
+      legend1:'Preço mais baixo', legend2:'Preço médio', legend3:'Preço mais alto',
+      distSuffix:'da tua localização',
+      modalTitle:'Ativa a tua localização em direto', modalBody:'A GasoWin precisa de saber onde estás para te mostrar os postos mais baratos perto de ti, em tempo real.',
+      modalActivateBtn:'Ativar localização em direto', modalSkipBtn:'Prefiro procurar uma cidade',
+      footerNote:'Preços de combustíveis: dados oficiais do Ministério espanhol para a Transição Ecológica. A tua localização só é usada no teu navegador.'
+    }
+  };
+  let lang = 'es';
+  const t = (key) => I18N[lang][key] !== undefined ? I18N[lang][key] : I18N.es[key];
+
+  function applyStaticTranslations(){
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      const val = t(key);
+      if(typeof val === 'string') el.textContent = val;
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+      const key = el.getAttribute('data-i18n-placeholder');
+      const val = t(key);
+      if(typeof val === 'string') el.placeholder = val;
+    });
+    $('nearbyHeading').textContent = t('nearbyHeading');
+    $('footerNote').textContent = t('footerNote');
+    $('modalTitle').textContent = t('modalTitle');
+    $('modalBody').textContent = t('modalBody');
+    $('modalActivateBtn').textContent = t('modalActivateBtn');
+    $('modalSkipBtn').textContent = t('modalSkipBtn');
+    const legendHtml = `
+      <div class="legend-row"><div class="legend-dot" style="background:#16a34a"></div>${t('legend1')}</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#d97706"></div>${t('legend2')}</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#dc2626"></div>${t('legend3')}</div>
+    `;
+    $('legendBox').innerHTML = legendHtml;
+    $('legendInline').innerHTML = legendHtml;
+  }
+
+  document.getElementById('langSelect').addEventListener('change', (ev) => {
+    lang = ev.target.value;
+    document.documentElement.lang = lang;
+    savePrefs({ lang });
+    applyStaticTranslations();
+    renderStations();
+    if(state.fetchStatus === 'ok') setLiveStatus('ok', t('liveOk')(minutesAgoText()));
+  });
+
+  // ---------------- Preferences (idioma persistente) ----------------
+  const PREFS_KEY = 'gasowin-prefs';
+  async function loadPrefs(){
+    try{
+      if(window.storage){
+        const res = await window.storage.get(PREFS_KEY, false);
+        return res && res.value ? JSON.parse(res.value) : {};
+      }
+    }catch(e){ /* probamos localStorage */ }
+    try{
+      const raw = localStorage.getItem(PREFS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+  function savePrefs(prefs){
+    try{
+      if(window.storage){ window.storage.set(PREFS_KEY, JSON.stringify(prefs), false).catch(()=>{}); return; }
+    }catch(e){ /* seguimos con localStorage */ }
+    try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){ /* nada que hacer */ }
+  }
+
+  // ---------------- Data config ----------------
+  const FUEL_FIELDS = {
+    '95': ['Precio Gasolina 95 E5'],
+    '98': ['Precio Gasolina 98 E5'],
+    'diesel': ['Precio Gasoleo A', 'Precio Gasóleo A'],
+    'adblue': ['Precio Adblue', 'Precio AdBlue']
+  };
+  const STATIONS_URL = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/';
+  const REFRESH_MS = 5 * 60 * 1000;
+
+  let state = {
+    activeFuel: '95', radiusKm: 10, userLoc: null,
+    rawStations: [], stations: [], lastFetch: null, fetchStatus: 'loading'
+  };
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------- Theme (sistema, claro/oscuro) ----------------
+  let currentTileBase = null, currentTileRef = null;
+  function applyMapTheme(theme){
+    if(currentTileBase) map.removeLayer(currentTileBase);
+    if(currentTileRef) map.removeLayer(currentTileRef);
+    const folder = theme === 'dark' ? 'World_Dark_Gray' : 'World_Light_Gray';
+    const attrib = 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
+    currentTileBase = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${folder}_Base/MapServer/tile/{z}/{y}/{x}`, { attribution: attrib, maxZoom: 16 }).addTo(map);
+    currentTileRef = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${folder}_Reference/MapServer/tile/{z}/{y}/{x}`, { attribution: attrib, maxZoom: 16, pane: 'overlayPane' }).addTo(map);
+  }
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    applyMapTheme(theme);
+  }
+
+  // ---------------- Map setup ----------------
+  const map = L.map('map', { zoomControl: false }).setView([40.4168, -3.7038], 6);
+  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+  map.setMaxZoom(16);
+  let stationLayer = L.layerGroup().addTo(map);
+  let userMarker = null;
+
+  const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  applyTheme(darkModeQuery.matches ? 'dark' : 'light');
+  darkModeQuery.addEventListener('change', (ev) => applyTheme(ev.matches ? 'dark' : 'light'));
+
+  function haversine(lat1, lon1, lat2, lon2){
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI/180;
+    const dLon = (lon2 - lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  function getField(obj, candidates){
+    for(const k of candidates){ if(obj[k] !== undefined) return obj[k]; }
+    return undefined;
+  }
+  function parseNum(v){
+    if(v === undefined || v === null || v === '') return null;
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isNaN(n) ? null : n;
+  }
+  function parseStation(s){
+    const lat = parseNum(getField(s, ['Latitud']));
+    const lon = parseNum(getField(s, ['Longitud (WGS84)', 'Longitud']));
+    if(lat === null || lon === null) return null;
+    return {
+      id: s['IDEESS'],
+      name: getField(s, ['Rótulo','Rotulo']) || 'Estación de servicio',
+      address: getField(s, ['Dirección','Direccion']) || '',
+      city: getField(s, ['Localidad']) || getField(s, ['Municipio']) || '',
+      lat, lon,
+      prices: {
+        '95': parseNum(getField(s, FUEL_FIELDS['95'])),
+        '98': parseNum(getField(s, FUEL_FIELDS['98'])),
+        'diesel': parseNum(getField(s, FUEL_FIELDS['diesel'])),
+        'adblue': parseNum(getField(s, FUEL_FIELDS['adblue']))
+      }
+    };
+  }
+  function fmtPrice(n){ return n.toLocaleString('es-ES', { minimumFractionDigits:3, maximumFractionDigits:3 }); }
+  function fmtDist(km){ return km < 10 ? km.toFixed(1) + ' km' : Math.round(km) + ' km'; }
+  function priceColor(tt){
+    tt = Math.max(0, Math.min(1, tt));
+    const stops = tt < 0.5 ? [[22,163,74], [217,119,6], tt/0.5] : [[217,119,6], [220,38,38], (tt-0.5)/0.5];
+    const [c1, c2, f] = stops;
+    const r = Math.round(c1[0] + (c2[0]-c1[0])*f);
+    const g = Math.round(c1[1] + (c2[1]-c1[1])*f);
+    const b = Math.round(c1[2] + (c2[2]-c1[2])*f);
+    return `rgb(${r},${g},${b})`;
+  }
+  function setLiveStatus(status, text){
+    state.fetchStatus = status;
+    $('liveDot').className = 'live-dot' + (status === 'error' ? ' error' : status === 'stale' ? ' stale' : '');
+    $('liveText').textContent = text;
+  }
+  function minutesAgoText(){
+    if(!state.lastFetch) return '';
+    const mins = Math.max(0, Math.round((Date.now() - state.lastFetch) / 60000));
+    return mins === 0 ? t('agoNow') : t('agoMin')(mins);
+  }
+  function openDirections(lat, lon){
+    const ua = navigator.userAgent || '';
+    const isApple = /iPhone|iPad|iPod|Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|CriOS/.test(ua);
+    const url = isApple ? `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=d` : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+    window.open(url, '_blank');
+  }
+
+  function tryParseStationList(text){
+    const trimmed = (text || '').trim();
+    if(!trimmed) return null;
+    if(trimmed.startsWith('<')){
+      try{
+        const doc = new DOMParser().parseFromString(trimmed, 'application/xml');
+        if(doc.getElementsByTagName('parsererror').length) return null;
+        const nodes = doc.getElementsByTagName('EESSPrecio');
+        const list = [];
+        for(let i=0;i<nodes.length;i++){
+          const el = nodes[i];
+          const get = (tag) => { const n = el.getElementsByTagName(tag)[0]; return n ? n.textContent : undefined; };
+          list.push({
+            'IDEESS': get('IDEESS'), 'Rótulo': get('Rótulo') || get('Rotulo'),
+            'Dirección': get('Dirección') || get('Direccion'), 'Localidad': get('Localidad'), 'Municipio': get('Municipio'),
+            'Latitud': get('Latitud'), 'Longitud (WGS84)': get('Longitud_x0020__x0028_WGS84_x0029_') || get('Longitud'),
+            'Precio Gasolina 95 E5': get('Precio_x0020_Gasolina_x0020_95_x0020_E5'),
+            'Precio Gasolina 98 E5': get('Precio_x0020_Gasolina_x0020_98_x0020_E5'),
+            'Precio Gasoleo A': get('Precio_x0020_Gasoleo_x0020_A') || get('Precio_x0020_Gasóleo_x0020_A'),
+            'Precio Adblue': get('Precio_x0020_Adblue') || get('Precio_x0020_AdBlue')
+          });
+        }
+        return list.length ? list : null;
+      }catch(e){ return null; }
+    }
+    try{
+      const data = JSON.parse(trimmed);
+      return (data.ListaEESSPrecio && data.ListaEESSPrecio.length) ? data.ListaEESSPrecio : null;
+    }catch(e){ return null; }
+  }
+
+  let fetchLog = [];
+  function logDebug(lines){ fetchLog = lines; renderDebug(); }
+  function renderDebug(){
+    const el = $('debugPanel');
+    if(!el) return;
+    const extra = [];
+    extra.push(state.userLoc ? `loc: ${state.userLoc.lat.toFixed(4)}, ${state.userLoc.lon.toFixed(4)}` : 'loc: —');
+    extra.push(`radio: ${state.radiusKm} km · filtro: ${state.activeFuel}`);
+    extra.push(`resultados en el radio: ${state.stations.length}`);
+    el.textContent = fetchLog.concat(['—'], extra).join('\n');
+  }
+
+  async function fetchStations(){
+    setLiveStatus('loading', t('liveLoading'));
+    const log = [];
+    let rawList = null;
+    const attempts = [
+      { name: 'Directo', url: STATIONS_URL, direct: true },
+      { name: 'Vía allorigins', url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(STATIONS_URL) },
+      { name: 'Vía corsproxy.io', url: 'https://corsproxy.io/?url=' + encodeURIComponent(STATIONS_URL) }
+    ];
+    for(const attempt of attempts){
+      if(rawList) break;
+      try{
+        const res = await fetch(attempt.url, attempt.direct ? { headers: { 'Accept': 'application/json' } } : {});
+        const text = await res.text();
+        const parsed = tryParseStationList(text);
+        if(parsed){ rawList = parsed; log.push(`OK ${attempt.name}: ${parsed.length}`); }
+        else log.push(`- ${attempt.name}: respuesta no reconocida`);
+      }catch(err){ log.push(`x ${attempt.name}: ${err.message || 'fallo de red'}`); }
+    }
+    if(rawList){
+      state.rawStations = rawList.map(parseStation).filter(Boolean);
+      state.lastFetch = Date.now();
+      setLiveStatus('ok', t('liveOk')(minutesAgoText()));
+    }else{
+      setLiveStatus('error', t('liveError'));
+    }
+    logDebug(log);
+    recomputeNearby();
+  }
+
+  function recomputeNearby(){
+    if(!state.userLoc || state.rawStations.length === 0){
+      state.stations = [];
+      renderStations();
+      return;
+    }
+    const { lat, lon } = state.userLoc;
+    state.stations = state.rawStations
+      .map(s => ({ ...s, distance: haversine(lat, lon, s.lat, s.lon) }))
+      .filter(s => s.distance <= state.radiusKm && s.prices[state.activeFuel] !== null)
+      .sort((a,b) => a.prices[state.activeFuel] - b.prices[state.activeFuel]);
+    renderStations();
+  }
+
+  function fuelLabel(){
+    const key = state.activeFuel === '95' ? 'tab95' : state.activeFuel === '98' ? 'tab98' : state.activeFuel === 'diesel' ? 'tabDiesel' : 'tabAdblue';
+    return t(key);
+  }
+
+  function renderStations(){
+    stationLayer.clearLayers();
+    const list = state.stations;
+    const listEl = $('stationList');
+    const emptyEl = $('stationEmpty');
+    listEl.innerHTML = '';
+
+    if(list.length === 0){
+      emptyEl.style.display = 'block';
+      emptyEl.textContent = state.userLoc ? t('emptyNoResults')(state.radiusKm, fuelLabel()) : t('emptyNoLocation');
+      renderDebug();
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    const prices = list.map(s => s.prices[state.activeFuel]);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const range = max - min || 0.001;
+
+    list.forEach((s, i) => {
+      const tt = (s.prices[state.activeFuel] - min) / range;
+      const color = priceColor(tt);
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="fuel-marker" style="width:52px;height:22px;background:${color}">${fmtPrice(s.prices[state.activeFuel])}</div>`,
+        iconSize: [52,22], iconAnchor: [26,11]
+      });
+      const marker = L.marker([s.lat, s.lon], { icon }).addTo(stationLayer);
+      marker.bindPopup(`
+        <div class="popup-title">${s.name}</div>
+        <div class="popup-row">${s.address}${s.city ? ', ' + s.city : ''}</div>
+        <div class="popup-row popup-price">${fmtPrice(s.prices[state.activeFuel])} EUR/l</div>
+        <div class="popup-row">${fmtDist(s.distance)} ${t('distSuffix')}</div>
+        <button class="popup-go-btn" data-lat="${s.lat}" data-lon="${s.lon}">${t('goBtn')}</button>
+      `);
+
+      if(i < 14){
+        const item = document.createElement('div');
+        item.className = 'station-item' + (i === 0 ? ' rank-1' : '');
+        item.innerHTML = `
+          <div class="station-top">
+            <div class="station-name">${s.name}</div>
+            <div class="station-price">${fmtPrice(s.prices[state.activeFuel])} EUR</div>
+          </div>
+          <div class="station-sub">
+            <span>${s.city || s.address || ''}</span>
+            <span>${fmtDist(s.distance)}</span>
+          </div>
+          <button class="popup-go-btn" data-lat="${s.lat}" data-lon="${s.lon}" style="margin-top:8px;">${t('goBtn')}</button>
+        `;
+        item.querySelector('.popup-go-btn').addEventListener('click', (ev) => { ev.stopPropagation(); openDirections(s.lat, s.lon); });
+        item.querySelector('.station-top').addEventListener('click', () => { map.flyTo([s.lat, s.lon], 16); marker.openPopup(); });
+        item.querySelector('.station-sub').addEventListener('click', () => { map.flyTo([s.lat, s.lon], 16); marker.openPopup(); });
+        listEl.appendChild(item);
+      }
+    });
+    renderDebug();
+  }
+
+  map.on('popupopen', (e) => {
+    const node = e.popup._contentNode;
+    const btn = node && node.querySelector('.popup-go-btn');
+    if(btn) btn.addEventListener('click', () => openDirections(parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon)));
+  });
+
+  function setUserLocation(lat, lon, label){
+    state.userLoc = { lat, lon };
+    if(userMarker) map.removeLayer(userMarker);
+    userMarker = L.circleMarker([lat, lon], { radius: 7, color: '#fff', weight: 3, fillColor: '#4f46e5', fillOpacity: 1 }).addTo(map);
+    map.setView([lat, lon], 13);
+    $('locStatus').textContent = label || t('locSet');
+    recomputeNearby();
+  }
+
+  // ---------------- Controls ----------------
+  $('fuelTabs').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.fuel-tab');
+    if(!btn) return;
+    document.querySelectorAll('.fuel-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.activeFuel = btn.dataset.fuel;
+    recomputeNearby();
+  });
+  $('radiusRow').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.radius-chip');
+    if(!btn) return;
+    document.querySelectorAll('.radius-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.radiusKm = parseInt(btn.dataset.km, 10);
+    recomputeNearby();
+  });
+
+  function requestGeolocation(){
+    if(!navigator.geolocation){
+      $('locStatus').textContent = t('locNotFound');
+      return;
+    }
+    $('locStatus').textContent = t('locLocating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLocation(pos.coords.latitude, pos.coords.longitude, t('locSet')),
+      (err) => {
+        const reasons = { 1: 'permiso denegado', 2: 'posición no disponible', 3: 'tiempo agotado' };
+        $('locStatus').textContent = `${reasons[err.code] || err.message}`;
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }
+  $('geoBtn').addEventListener('click', requestGeolocation);
+
+  async function searchCity(){
+    const q = $('citySearch').value.trim();
+    if(!q) return;
+    $('locStatus').textContent = t('locSearching');
+    const attempts = [
+      { name:'nominatim', url:`https://nominatim.openstreetmap.org/search?format=json&countrycodes=es&limit=1&q=${encodeURIComponent(q)}`,
+        parse:(data)=> data[0] ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name } : null },
+      { name:'photon', url:`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&lat=40.4&lon=-3.7&osm_tag=place`,
+        parse:(data)=>{ const f = data.features && data.features[0]; if(!f) return null; const p=f.properties; return { lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], label:[p.name,p.city,p.state].filter(Boolean).join(', ') }; } },
+      { name:'nominatim-proxy', url:`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=es&limit=1&q=${encodeURIComponent(q)}`)}`,
+        parse:(data)=> data[0] ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name } : null }
+    ];
+    const searchLog = [];
+    for(const attempt of attempts){
+      try{
+        const res = await fetch(attempt.url, { headers: { 'Accept-Language': lang } });
+        const data = await res.json();
+        const result = attempt.parse(data);
+        if(result && !isNaN(result.lat) && !isNaN(result.lon)){
+          searchLog.push(`OK ${attempt.name}`); logDebug(searchLog);
+          setUserLocation(result.lat, result.lon, result.label.split(',').slice(0,2).join(','));
+          return;
+        }else{ searchLog.push(`- ${attempt.name}: sin resultados`); }
+      }catch(err){ searchLog.push(`x ${attempt.name}: ${err.message || 'fallo de red'}`); }
+    }
+    logDebug(searchLog);
+    $('locStatus').textContent = t('locNotFound');
+  }
+  $('searchBtn').addEventListener('click', searchCity);
+  $('citySearch').addEventListener('keydown', (ev) => { if(ev.key === 'Enter') searchCity(); });
+  $('refreshBtn').addEventListener('click', fetchStations);
+
+  // ---------------- Modal de ubicación ----------------
+  $('modalActivateBtn').addEventListener('click', () => {
+    $('locModal').style.display = 'none';
+    requestGeolocation();
+  });
+  $('modalSkipBtn').addEventListener('click', () => {
+    $('locModal').style.display = 'none';
+    $('citySearch').focus();
+  });
+
+  // ---------------- Init ----------------
+  (async function init(){
+    const prefs = await loadPrefs();
+    lang = prefs.lang || 'es';
+    document.getElementById('langSelect').value = lang;
+    document.documentElement.lang = lang;
+    applyStaticTranslations();
+    fetchStations();
+    setInterval(() => { if(state.fetchStatus === 'ok') setLiveStatus('ok', t('liveOk')(minutesAgoText())); }, 30000);
+    setInterval(fetchStations, REFRESH_MS);
+  })();
+})();
+</script>
+</body>
+</html>
